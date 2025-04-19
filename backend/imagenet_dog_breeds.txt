@@ -1,0 +1,2 @@
+# This file will be used to compare the user's class_names list against the official ImageNet dog breed class order.
+# I will fetch the correct order and use it to update the backend if needed.
