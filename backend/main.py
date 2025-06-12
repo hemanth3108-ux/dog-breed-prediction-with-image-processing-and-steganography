@@ -1,6 +1,6 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 from PIL import Image
 import io
@@ -10,6 +10,10 @@ import torchvision.transforms as transforms
 from typing import List, Optional
 import json
 import os
+from stegano import lsb
+import uuid
+import base64
+from image_processing_api import router as image_processing_router
 
 class Prediction(BaseModel):
     breed: str
@@ -21,6 +25,10 @@ class PredictionResponse(BaseModel):
 class ErrorResponse(BaseModel):
     error: str
     details: str
+
+class SteganographyRequest(BaseModel):
+    message: str
+    save_path: str
 
 app = FastAPI()
 
@@ -59,6 +67,111 @@ class_names = [
     'keeshond', 'Brabancon_griffon', 'Pembroke', 'Cardigan', 'toy_poodle', 'miniature_poodle',
     'standard_poodle', 'Mexican_hairless'
 ]
+
+# Add this mapping at the top of your file (after imports)
+imagenet_dog_classes = {
+    151: "Chihuahua",
+    152: "Japanese Spaniel",
+    153: "Maltese Dog",
+    154: "Pekinese",
+    155: "Shih-Tzu",
+    156: "Blenheim Spaniel",
+    157: "Papillon",
+    158: "Toy Terrier",
+    159: "Rhodesian Ridgeback",
+    160: "Afghan Hound",
+    161: "Basset",
+    162: "Beagle",
+    163: "Bloodhound",
+    164: "Bluetick",
+    165: "Black-and-tan Coonhound",
+    166: "Walker Hound",
+    167: "English Foxhound",
+    168: "Redbone",
+    169: "Borzoi",
+    170: "Irish Wolfhound",
+    171: "Italian Greyhound",
+    172: "Whippet",
+    173: "Ibizan Hound",
+    174: "Norwegian Elkhound",
+    175: "Otterhound",
+    176: "Saluki",
+    177: "Scottish Deerhound",
+    178: "Weimaraner",
+    179: "Staffordshire Bullterrier",
+    180: "American Staffordshire Terrier",
+    181: "Bedlington Terrier",
+    182: "Border Terrier",
+    183: "Kerry Blue Terrier",
+    184: "Irish Terrier",
+    185: "Norfolk Terrier",
+    186: "Norwich Terrier",
+    187: "Yorkshire Terrier",
+    188: "Wire-haired Fox Terrier",
+    189: "Lakeland Terrier",
+    190: "Sealyham Terrier",
+    191: "Airedale",
+    192: "Cairn",
+    193: "Australian Terrier",
+    194: "Dandie Dinmont",
+    195: "Boston Bull",
+    196: "Miniature Schnauzer",
+    197: "Giant Schnauzer",
+    198: "Standard Schnauzer",
+    199: "Scotch Terrier",
+    200: "Tibetan Terrier",
+    201: "Silky Terrier",
+    202: "Soft-coated Wheaten Terrier",
+    203: "West Highland White Terrier",
+    204: "Lhasa",
+    205: "Flat-coated Retriever",
+    206: "Curly-coated Retriever",
+    207: "Golden Retriever",
+    208: "Labrador Retriever",
+    209: "Chesapeake Bay Retriever",
+    210: "German Short-haired Pointer",
+    211: "Vizsla",
+    212: "English Setter",
+    213: "Irish Setter",
+    214: "Gordon Setter",
+    215: "Brittany Spaniel",
+    216: "Clumber",
+    217: "English Springer",
+    218: "Welsh Springer Spaniel",
+    219: "Cocker Spaniel",
+    220: "Sussex Spaniel",
+    221: "Irish Water Spaniel",
+    222: "Kuvasz",
+    223: "Schipperke",
+    224: "Groenendael",
+    225: "Malinois",
+    226: "Briard",
+    227: "Kelpie",
+    228: "Komondor",
+    229: "Old English Sheepdog",
+    230: "Shetland Sheepdog",
+    231: "Collie",
+    232: "Border Collie",
+    233: "Bouvier des Flandres",
+    234: "Rottweiler",
+    235: "German Shepherd",
+    236: "Doberman",
+    237: "Miniature Pinscher",
+    238: "Greater Swiss Mountain Dog",
+    239: "Bernese Mountain Dog",
+    240: "Appenzeller",
+    241: "EntleBucher",
+    242: "Boxer",
+    243: "Bull Mastiff",
+    244: "Tibetan Mastiff",
+    245: "French Bulldog",
+    246: "Great Dane",
+    247: "Saint Bernard",
+    248: "Eskimo Dog",
+    249: "Malamute",
+    250: "Siberian Husky"
+    # ... (add more if needed)
+}
 
 # Load the model
 try:
@@ -101,81 +214,163 @@ async def root():
         "sample_classes": class_names[:5] if class_names else None
     }
 
-@app.post("/predict", response_model=PredictionResponse)
-async def predict(file: UploadFile = File(...)):
-    print(f"\n{'='*50}\nReceived prediction request\n{'='*50}")
-    print(f"File: {file.filename}")
-    
-    if not model:
-        error_msg = "Model is not loaded"
-        print(f"Error: {error_msg}")
-        raise HTTPException(status_code=500, detail=error_msg)
-    
+@app.post("/predict")
+async def predict(
+    file: UploadFile = File(...),
+    use_steganography: bool = Form(False),
+    message: Optional[str] = Form(None),
+    save_path: Optional[str] = Form(None)
+):
     try:
-        # Read image
-        print("Reading image file...")
+        # Read the image
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
         
-        # Convert to RGB if needed
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        print(f"Image loaded successfully: size={image.size}, mode={image.mode}")
+        # If steganography is requested
+        if use_steganography and message:
+            if not save_path:
+                save_path = f"steg_{uuid.uuid4()}.png"
+            
+            # Save the original image temporarily
+            temp_path = f"temp_{uuid.uuid4()}.png"
+            image.save(temp_path)
+            
+            # Hide the message
+            secret = lsb.hide(temp_path, message)
+            secret.save(save_path)
+            
+            # Clean up temporary file
+            os.remove(temp_path)
+            
+            # Return the path to the steganographed image
+            return FileResponse(
+                save_path,
+                media_type="image/png",
+                headers={"X-Steganography": "true"}
+            )
         
-        # Preprocess image
-        print("Preprocessing image...")
-        processed_image = preprocess_image(image)
-        print(f"Processed tensor shape: {processed_image.shape}, dtype={processed_image.dtype}")
+        # Preprocess the image
+        image_tensor = preprocess_image(image)
         
         # Make prediction
-        print("Making prediction...")
         with torch.no_grad():
-            # Move tensor to same device as model
-            # If you want to use GPU, also move the model to CUDA: model.to('cuda')
-            processed_image = processed_image.to(next(model.parameters()).device)
+            outputs = model(image_tensor)
+            probabilities = torch.nn.functional.softmax(outputs[0], dim=0)
+            top5_prob, top5_catid = torch.topk(probabilities, 5)
             
-            # Get model predictions
-            predictions = model(processed_image)
-            print(f"Raw predictions: shape={predictions.shape}, range=[{predictions.min().item():.2f}, {predictions.max().item():.2f}]")
-            
-            # Apply softmax to get probabilities
-            probabilities = torch.nn.functional.softmax(predictions[0], dim=0)
-            print(f"Probabilities sum: {probabilities.sum().item():.4f}")
+        # Prepare response
+        predictions = []
+        for i in range(top5_prob.size(0)):
+            idx = top5_catid[i].item()
+            breed = imagenet_dog_classes.get(idx, f"Class {idx}")
+            predictions.append({
+                "breed": breed,
+                "probability": float(top5_prob[i])
+            })
         
-        # Get dog breed predictions (ImageNet indices 151-268 are dog breeds)
-        print("Extracting dog breed predictions...")
-        dog_probs = probabilities[151:269]
-        top_5_probs, top_5_relative_idx = torch.topk(dog_probs, k=5)
-        top_5_idx = top_5_relative_idx + 151  # Convert back to ImageNet indices
+        return {"predictions": predictions}
         
-        # Check if the image contains a dog by thresholding the highest probability
-        max_prob = top_5_probs[0].item() if len(top_5_probs) > 0 else 0.0
-        dog_threshold = 0.5  # You can adjust this threshold for stricter/looser detection
-        if max_prob < dog_threshold:
-            error_msg = "There is no dog in the image you have uploaded. Please upload a dog image."
-            print(error_msg)
-            raise HTTPException(status_code=400, detail=error_msg)
-
-        # Create predictions list
-        top_5_predictions = []
-        for i, (idx, prob) in enumerate(zip(top_5_idx.tolist(), top_5_probs.tolist())):
-            # idx is the ImageNet index (151-268), class_names is ordered as 0-117 for dog breeds
-            breed_idx = idx - 151
-            breed = class_names[breed_idx] if 0 <= breed_idx < len(class_names) else f"Dog breed {idx}"
-            probability = float(prob)
-            print(f"  {i+1}. {breed}: {probability:.4f}")
-            top_5_predictions.append(Prediction(breed=breed, probability=probability))
-        
-        print("Prediction complete!\n" + "="*50)
-        
-        # Return response
-        response = PredictionResponse(predictions=top_5_predictions)
-        print(f"Sending response: {response}")
-        return response
-    
     except Exception as e:
-        error_msg = f"Error during prediction: {str(e)}"
-        print(f"\n{error_msg}")
         import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=error_msg)
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/extract-message")
+async def extract_message(file: UploadFile = File(...)):
+    try:
+        # Read the image
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents))
+        
+        # Save temporarily
+        temp_path = f"temp_{uuid.uuid4()}.png"
+        image.save(temp_path)
+        
+        # Extract the message
+        message = lsb.reveal(temp_path)
+        
+        # Clean up
+        os.remove(temp_path)
+        
+        return {"message": message}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/encode")
+async def encode_image(
+    file: UploadFile = File(...),
+    message: str = Form(...),
+    save_path: Optional[str] = Form(None),
+    save_to_server: bool = Form(False)
+):
+    try:
+        # Read the image
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents))
+        
+        # Generate a unique filename if save_path not provided
+        if not save_path:
+            save_path = f"encoded_{uuid.uuid4()}.png"
+        
+        # Save the original image temporarily
+        temp_path = f"temp_{uuid.uuid4()}.png"
+        image.save(temp_path)
+        
+        # Encode the message
+        secret = lsb.hide(temp_path, message)
+        secret.save(save_path)
+        
+        # Clean up temporary file
+        os.remove(temp_path)
+        
+        # Read the encoded image and convert to base64
+        with open(save_path, "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+        
+        server_path = None
+        if not save_to_server:
+            # Clean up the saved file if not saving to server
+            os.remove(save_path)
+        else:
+            server_path = os.path.abspath(save_path)
+        
+        return {
+            "success": True,
+            "encoded_image": encoded_image,
+            "message": "Message encoded successfully",
+            "server_path": server_path
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/decode")
+async def decode_image(file: UploadFile = File(...)):
+    try:
+        # Read the image
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents))
+        
+        # Save temporarily
+        temp_path = f"temp_{uuid.uuid4()}.png"
+        image.save(temp_path)
+        
+        # Decode the message
+        try:
+            message = lsb.reveal(temp_path)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail="No hidden message found in the image")
+        
+        # Clean up
+        os.remove(temp_path)
+        
+        return {
+            "success": True,
+            "message": message
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+app.include_router(image_processing_router)

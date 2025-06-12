@@ -1,52 +1,5 @@
-import React, { useState } from 'react';
-import { useDropzone } from 'react-dropzone';
-import {
-  Box,
-  Container,
-  Typography,
-  Paper,
-  LinearProgress,
-  List,
-  ListItem,
-  ListItemText,
-  CircularProgress,
-  ThemeProvider,
-  createTheme,
-  CssBaseline,
-  Card,
-  CardContent,
-  Avatar,
-  Fade,
-} from '@mui/material';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import PetsIcon from '@mui/icons-material/Pets';
-import axios from 'axios';
-
-const theme = createTheme({
-  palette: {
-    mode: 'light',
-    primary: {
-      main: '#1976d2',
-    },
-    secondary: {
-      main: '#ff4081',
-    },
-    background: {
-      default: '#f5f7fa',
-      paper: '#fff',
-    },
-  },
-  typography: {
-    fontFamily: 'Poppins, Roboto, Arial, sans-serif',
-    h3: {
-      fontWeight: 700,
-      letterSpacing: '-1px',
-    },
-    h6: {
-      fontWeight: 600,
-    },
-  },
-});
+import React, { useState, useRef, useEffect } from 'react';
+import './index.css';
 
 interface Prediction {
   breed: string;
@@ -54,180 +7,445 @@ interface Prediction {
 }
 
 function App() {
+  const [file, setFile] = useState<File | null>(null);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [useSteganography, setUseSteganography] = useState(false);
+  const [message, setMessage] = useState('');
+  const [savePath, setSavePath] = useState('');
+  const [encodedImage, setEncodedImage] = useState<string | null>(null);
+  const [decodedMessage, setDecodedMessage] = useState<string | null>(null);
+  const [saveToServer, setSaveToServer] = useState(false);
+  const [serverPath, setServerPath] = useState<string | null>(null);
+  const [stegMode, setStegMode] = useState<'encode' | 'decode'>('encode');
+  const [processedImage, setProcessedImage] = useState<string | null>(null);
+  const [processedImageBlob, setProcessedImageBlob] = useState<Blob | null>(null);
+  const [selectedFilter, setSelectedFilter] = useState('');
+  const [filterParams, setFilterParams] = useState<Record<string, any>>({});
+  const [availableFilters, setAvailableFilters] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const onDrop = async (acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file) return;
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+      setPredictions([]);
+      setError(null);
+      setEncodedImage(null);
+      setDecodedMessage(null);
+    }
+  };
 
-    setPreviewUrl(URL.createObjectURL(file));
+  const handleEncode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file || !message) return;
+
     setLoading(true);
-    setPredictions([]);
+    setError(null);
+    setEncodedImage(null);
+    setServerPath(null);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('message', message);
+    if (savePath) {
+      formData.append('save_path', savePath);
+    }
+    formData.append('save_to_server', saveToServer.toString());
 
     try {
-      console.log('Uploading file:', file.name);
-      const formData = new FormData();
-      formData.append('file', file);
-
-      console.log('Making API request...');
-      const response = await axios.post('http://localhost:8000/predict', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+      const response = await fetch('http://localhost:8000/encode', {
+        method: 'POST',
+        body: formData,
       });
 
-      console.log('Raw API response:', response.data);
-      
-      const preds = response.data?.predictions;
-      console.log('Extracted predictions:', preds);
-
-      if (Array.isArray(preds) && preds.length > 0) {
-        console.log('Setting predictions:', preds);
-        setPredictions(preds);
-      } else {
-        console.warn('No valid predictions received');
-        setPredictions([]);
+      if (!response.ok) {
+        throw new Error('Failed to encode message');
       }
 
-    } catch (error: any) {
-      console.error('Error details:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-      });
-      alert(`Error: ${error.response?.data?.detail || error.message || 'Failed to predict dog breed'}`);
+      const data = await response.json();
+      setEncodedImage(data.encoded_image);
+      if (data.server_path) {
+        setServerPath(data.server_path);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
     }
   };
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      'image/*': ['.jpeg', '.jpg', '.png'],
-    },
-    multiple: false,
-  });
+  const handleDecode = async () => {
+    if (!file) return;
 
-  const hasPredictions = Array.isArray(predictions) && predictions.length > 0;
+    setLoading(true);
+    setError(null);
+    setDecodedMessage(null);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('http://localhost:8000/decode', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to decode message');
+      }
+
+      const data = await response.json();
+      setDecodedMessage(data.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleProcessImage = async () => {
+    if (!file || !selectedFilter) return;
+
+    setLoading(true);
+    setError(null);
+    setProcessedImage(null);
+    setProcessedImageBlob(null);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('filter_type', selectedFilter);
+    if (Object.keys(filterParams).length > 0) {
+      formData.append('params', JSON.stringify(filterParams));
+    }
+
+    try {
+      const response = await fetch('http://localhost:8000/process-image', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to process image');
+      }
+
+      const blob = await response.blob();
+      const imageUrl = URL.createObjectURL(blob);
+      setProcessedImage(imageUrl);
+      setProcessedImageBlob(blob);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) return;
+
+    setLoading(true);
+    setError(null);
+    setPredictions([]);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('http://localhost:8000/predict', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to process image');
+      }
+
+      const data = await response.json();
+      setPredictions(data.predictions);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetch('http://localhost:8000/available-filters')
+      .then(res => res.json())
+      .then(data => setAvailableFilters(data.filters))
+      .catch(err => console.error('Error fetching filters:', err));
+  }, []);
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <Container maxWidth="md">
-        <Box sx={{ my: 4 }}>
-          <Typography variant="h3" component="h1" gutterBottom align="center">
-            Dog Breed Classifier
-          </Typography>
+    <div className="App">
+      <header className="App-header">
+        <h1>Dog Breed Classifier with Steganography</h1>
+        <p>Upload an image to classify dog breeds, encode/decode messages, and process images with filters</p>
+      </header>
 
-          <Paper
-            {...getRootProps()}
-            sx={{
-              p: 4,
-              mt: 4,
-              mb: 2,
-              textAlign: 'center',
-              cursor: 'pointer',
-              background: isDragActive
-                ? 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)'
-                : 'linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)',
-              border: isDragActive ? '2.5px solid #1976d2' : '2.5px dashed #1976d2',
-              boxShadow: isDragActive
-                ? '0 4px 24px 0 rgba(33,150,243,0.15)'
-                : '0 2px 12px 0 rgba(33,150,243,0.07)',
-              transition: 'all 0.3s',
-              '&:hover': {
-                background: 'linear-gradient(135deg, #fcb69f 0%, #ffecd2 100%)',
-                border: '2.5px solid #ff4081',
-              },
-            }}
-          >
-            <input {...getInputProps()} />
-            <CloudUploadIcon sx={{ fontSize: 48, color: '#1976d2', mb: 1 }} />
-            <Typography variant="h6" sx={{ fontWeight: 500 }}>
-              {isDragActive
-                ? 'Drop the image here'
-                : 'Drag & drop a dog image, or click to select'}
-            </Typography>
-            <Typography variant="body2" sx={{ color: '#666', mt: 1 }}>
-              (JPG, PNG; max 5MB)
-            </Typography>
-          </Paper>
+      <main className="App-main">
+        <form onSubmit={handleSubmit} className="upload-form">
+          <div className="file-input-container">
+            {(!useSteganography || stegMode) && (
+              <>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  ref={fileInputRef}
+                  className="file-input"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="upload-button"
+                >
+                  Choose Image
+                </button>
+                {file && <span className="file-name">{file.name}</span>}
+              </>
+            )}
+          </div>
 
-          {previewUrl && (
-            <Fade in={!!previewUrl}>
-              <Box sx={{ mt: 4, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <Card sx={{ maxWidth: 340, borderRadius: 4, boxShadow: 4 }}>
-                  <CardContent sx={{ p: 2 }}>
-                    <img
-                      src={previewUrl}
-                      alt="Preview"
-                      style={{
-                        width: '100%',
-                        maxHeight: '260px',
-                        borderRadius: '12px',
-                        objectFit: 'cover',
-                        boxShadow: '0 2px 12px 0 rgba(33,150,243,0.10)',
-                      }}
-                    />
-                  </CardContent>
-                </Card>
-              </Box>
-            </Fade>
+          {/* Filter controls UI */}
+          {file && (
+            <div className="filter-controls">
+              <h3>Image Processing</h3>
+              <select
+                value={selectedFilter}
+                onChange={(e) => setSelectedFilter(e.target.value)}
+                className="filter-select"
+              >
+                <option value="">Select a filter</option>
+                {availableFilters.map((filter: string) => (
+                  <option key={filter} value={filter}>
+                    {filter.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                  </option>
+                ))}
+              </select>
+
+              {/* Parameter controls for filters */}
+              {selectedFilter === 'brightness' && (
+                <div>
+                  <label>Brightness Factor:</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={filterParams.factor ?? 1}
+                    onChange={(e) => setFilterParams({ ...filterParams, factor: parseFloat(e.target.value) })}
+                  />
+                </div>
+              )}
+              {selectedFilter === 'contrast' && (
+                <div>
+                  <label>Contrast Factor:</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={filterParams.factor ?? 1}
+                    onChange={(e) => setFilterParams({ ...filterParams, factor: parseFloat(e.target.value) })}
+                  />
+                </div>
+              )}
+              {selectedFilter === 'saturation' && (
+                <div>
+                  <label>Saturation Factor:</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={filterParams.factor ?? 1}
+                    onChange={(e) => setFilterParams({ ...filterParams, factor: parseFloat(e.target.value) })}
+                  />
+                </div>
+              )}
+              {selectedFilter === 'rotate' && (
+                <div>
+                  <label>Rotation Angle:</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="360"
+                    step="1"
+                    value={filterParams.angle ?? 0}
+                    onChange={(e) => setFilterParams({ ...filterParams, angle: parseInt(e.target.value) })}
+                  />
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleProcessImage}
+                disabled={!selectedFilter || loading}
+                className="process-button"
+              >
+                {loading ? 'Processing...' : 'Process Image'}
+              </button>
+
+              {processedImage && (
+                <div className="processed-image">
+                  <h4>Processed Image:</h4>
+                  <img src={processedImage} alt="Processed" />
+                </div>
+              )}
+            </div>
           )}
 
-          {loading && (
-            <Box sx={{ mt: 3 }}>
-              <CircularProgress />
-            </Box>
-          )}
+          <div className="steganography-options">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={useSteganography}
+                onChange={(e) => setUseSteganography(e.target.checked)}
+              />
+              Use Steganography
+            </label>
 
-          {hasPredictions && (
-            <Fade in={hasPredictions}>
-              <Paper sx={{ mt: 5, p: 3, borderRadius: 4, boxShadow: 6, background: 'linear-gradient(120deg, #f6d365 0%, #fda085 100%)' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                  <PetsIcon sx={{ color: '#ff4081', fontSize: 32, mr: 1 }} />
-                  <Typography variant="h6" gutterBottom sx={{ fontWeight: 700, color: '#222' }}>
-                    Predictions
-                  </Typography>
-                </Box>
-                <List>
-                  {predictions.map((prediction, index) => (
-                    <ListItem key={index} sx={{ mb: 1, borderRadius: 2, background: '#fff8', boxShadow: 2 }}>
-                      <Avatar sx={{ bgcolor: '#1976d2', mr: 2 }}>
-                        {index + 1}
-                      </Avatar>
-                      <ListItemText
-                        primary={<span style={{ fontWeight: 600, fontSize: '1.1em', color: '#222' }}>{prediction.breed.replace('_', ' ')}</span>}
-                        secondary={
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <LinearProgress
-                              variant="determinate"
-                              value={prediction.probability * 100}
-                              sx={{ flexGrow: 1, height: 10, borderRadius: 5, background: '#e3f2fd' }}
-                            />
-                            <Typography variant="body2" sx={{ minWidth: 50, fontWeight: 500, color: '#1976d2' }}>
-                              {(prediction.probability * 100).toFixed(1)}%
-                            </Typography>
-                          </Box>
-                        }
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              </Paper>
-            </Fade>
+            {useSteganography && (
+              <div className="steganography-mode">
+                <label>
+                  <input
+                    type="radio"
+                    name="stegMode"
+                    value="encode"
+                    checked={stegMode === 'encode'}
+                    onChange={() => setStegMode('encode')}
+                  />
+                  Encode
+                </label>
+                <label style={{ marginLeft: '1rem' }}>
+                  <input
+                    type="radio"
+                    name="stegMode"
+                    value="decode"
+                    checked={stegMode === 'decode'}
+                    onChange={() => setStegMode('decode')}
+                  />
+                  Decode
+                </label>
+              </div>
+            )}
+
+            {useSteganography && stegMode === 'encode' && (
+              <div className="steganography-inputs">
+                <input
+                  type="text"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Enter message to hide"
+                  className="message-input"
+                />
+                <input
+                  type="text"
+                  value={savePath}
+                  onChange={(e) => setSavePath(e.target.value)}
+                  placeholder="Enter save path (optional)"
+                  className="save-path-input"
+                />
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={saveToServer}
+                    onChange={(e) => setSaveToServer(e.target.checked)}
+                  />
+                  Save encoded image to server
+                </label>
+                <div className="button-group">
+                  <button
+                    type="button"
+                    onClick={handleEncode}
+                    disabled={!file || !message || loading}
+                    className="encode-button"
+                  >
+                    Encode Message
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {useSteganography && stegMode === 'decode' && (
+              <div className="steganography-inputs">
+                <div className="button-group">
+                  <button
+                    type="button"
+                    onClick={handleDecode}
+                    disabled={!file || loading}
+                    className="decode-button"
+                  >
+                    Decode Message
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {!useSteganography && (
+            <button
+              type="submit"
+              disabled={!file || loading}
+              className="submit-button"
+            >
+              {loading ? 'Processing...' : 'Classify Breed'}
+            </button>
           )}
-        </Box>
-        <Box sx={{ mt: 8, mb: 2, textAlign: 'center', opacity: 0.85 }}>
-          <Typography variant="caption" sx={{ color: '#aaa' }}>
-            &copy; {new Date().getFullYear()} Dog Breed Classifier
-          </Typography>
-        </Box>
-      </Container>
-    </ThemeProvider>
+        </form>
+
+        {error && <div className="error-message">{error}</div>}
+
+        {encodedImage && (
+          <div className="steganography-result">
+            <h2>Encoded Image</h2>
+            <img 
+              src={`data:image/png;base64,${encodedImage}`} 
+              alt="Encoded" 
+              className="result-image" 
+            />
+            <a
+              href={`data:image/png;base64,${encodedImage}`}
+              download="encoded_image.png"
+              className="download-button"
+            >
+              Download Encoded Image
+            </a>
+            {serverPath && (
+              <div className="server-path">
+                <strong>Saved on server at:</strong>
+                <div className="path-content">{serverPath}</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {decodedMessage && (
+          <div className="decoded-message">
+            <h2>Decoded Message</h2>
+            <p className="message-content">{decodedMessage}</p>
+          </div>
+        )}
+
+        {!useSteganography && predictions.length > 0 && (
+          <div className="predictions">
+            <h2>Top 5 Predictions</h2>
+            <ul className="prediction-list">
+              {predictions.map((prediction, index) => (
+                <li key={index} className="prediction-item">
+                  <span className="breed">{prediction.breed}</span>
+                  <span className="probability">
+                    {(prediction.probability * 100).toFixed(2)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </main>
+    </div>
   );
 }
 

@@ -5,7 +5,7 @@ body {
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(120deg, #e0c3fc 0%, #8ec5fc 100%);
+  background: linear-gradient(120deg, #b5b3b3 0%, #000000 100%);
   background-attachment: fixed;
   transition: background 0.5s;
 }
@@ -37,31 +37,326 @@ img, .MuiPaper-root, .MuiCard-root {
   }
 }
 
-/* Decorative floating paw prints background */
-.paw-bg {
-  position: absolute;
-  width: 100vw;
-  height: 100vh;
-  pointer-events: none;
-  z-index: 0;
-  overflow: hidden;
+.App {
+  text-align: center;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem;
 }
-.paw-bg::before, .paw-bg::after {
-  content: '';
-  position: absolute;
-  background-repeat: no-repeat;
-  opacity: 0.08;
-  width: 100vw;
-  height: 100vh;
-  pointer-events: none;
+
+.App-header {
+  margin-bottom: 2rem;
 }
-.paw-bg::before {
-  background-image: url('data:image/svg+xml;utf8,<svg width="60" height="60" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg"><ellipse cx="30" cy="50" rx="10" ry="7" fill="%23ff4081"/><ellipse cx="15" cy="40" rx="5" ry="4" fill="%232197d2"/><ellipse cx="45" cy="40" rx="5" ry="4" fill="%232197d2"/><ellipse cx="22" cy="30" rx="4" ry="3" fill="%23ff4081"/><ellipse cx="38" cy="30" rx="4" ry="3" fill="%23ff4081"/></svg>');
-  background-position: 10% 20%, 60% 10%, 80% 60%, 30% 80%;
-  background-size: 60px 60px, 50px 50px, 40px 40px, 50px 50px;
+
+.App-header h1 {
+  color: #2c3e50;
+  margin-bottom: 0.5rem;
 }
-.paw-bg::after {
-  background-image: url('data:image/svg+xml;utf8,<svg width="60" height="60" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg"><ellipse cx="30" cy="50" rx="10" ry="7" fill="%232197d2"/><ellipse cx="15" cy="40" rx="5" ry="4" fill="%23ff4081"/><ellipse cx="45" cy="40" rx="5" ry="4" fill="%23ff4081"/><ellipse cx="22" cy="30" rx="4" ry="3" fill="%232197d2"/><ellipse cx="38" cy="30" rx="4" ry="3" fill="%232197d2"/></svg>');
-  background-position: 80% 20%, 20% 10%, 70% 80%, 40% 60%;
-  background-size: 55px 55px, 45px 45px, 35px 35px, 45px 45px;
+
+.App-header p {
+  color: #7f8c8d;
+}
+
+.upload-form {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+}
+
+.file-input-container {
+  margin-bottom: 1.5rem;
+}
+
+.file-input {
+  display: none;
+}
+
+.upload-button {
+  background-color: #3498db;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.3s;
+}
+
+.upload-button:hover {
+  background-color: #2980b9;
+}
+
+.file-name {
+  display: block;
+  margin-top: 0.5rem;
+  color: #7f8c8d;
+}
+
+.steganography-options {
+  margin-bottom: 1.5rem;
+  text-align: left;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+  cursor: pointer;
+}
+
+.checkbox-label input {
+  margin-right: 0.5rem;
+}
+
+.steganography-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.message-input,
+.save-path-input {
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.extract-button {
+  background-color: #2ecc71;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.3s;
+}
+
+.extract-button:hover {
+  background-color: #27ae60;
+}
+
+.submit-button {
+  background-color: #2c3e50;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.3s;
+  width: 100%;
+}
+
+.submit-button:hover {
+  background-color: #1a252f;
+}
+
+.submit-button:disabled {
+  background-color: #95a5a6;
+  cursor: not-allowed;
+}
+
+.error-message {
+  color: #e74c3c;
+  background-color: #fadbd8;
+  padding: 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+.steganography-result {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+}
+
+.result-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 1rem 0;
+}
+
+.download-button {
+  display: inline-block;
+  background-color: #3498db;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  text-decoration: none;
+  transition: background-color 0.3s;
+}
+
+.download-button:hover {
+  background-color: #2980b9;
+}
+
+.predictions {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.prediction-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.prediction-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.prediction-item:last-child {
+  border-bottom: none;
+}
+
+.breed {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.probability {
+  color: #3498db;
+  font-weight: 600;
+}
+
+.button-group {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.encode-button {
+  background-color: #3498db;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.3s;
+  flex: 1;
+}
+
+.encode-button:hover {
+  background-color: #2980b9;
+}
+
+.encode-button:disabled {
+  background-color: #95a5a6;
+  cursor: not-allowed;
+}
+
+.decode-button {
+  background-color: #2ecc71;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.3s;
+  flex: 1;
+}
+
+.decode-button:hover {
+  background-color: #27ae60;
+}
+
+.decode-button:disabled {
+  background-color: #95a5a6;
+  cursor: not-allowed;
+}
+
+.decoded-message {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+}
+
+.message-content {
+  background-color: #f8f9fa;
+  padding: 1rem;
+  border-radius: 4px;
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.filter-controls {
+  margin: 20px 0;
+  padding: 20px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+}
+
+.filter-select {
+  width: 100%;
+  padding: 8px;
+  margin: 10px 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 16px;
+}
+
+.filter-params {
+  margin: 15px 0;
+  padding: 15px;
+  background-color: #fff;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.filter-params label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+
+.filter-params input[type="range"] {
+  width: 100%;
+  margin: 10px 0;
+}
+
+.process-button {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  margin: 10px 0;
+}
+
+.process-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.processed-image {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.processed-image img {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }

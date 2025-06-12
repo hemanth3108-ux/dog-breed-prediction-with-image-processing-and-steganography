@@ -12,7 +12,7 @@ tf.random.set_seed(42)
 # Load and preprocess the data
 def prepare_data():
     # Read labels
-    df = pd.read_csv('C:/Users/lenovo/OneDrive/Desktop/dog/dog-breed-identification/labels.csv')
+    df = pd.read_csv('../dog-breed-identification/labels.csv')
 
     
     # Create directories if they don't exist
